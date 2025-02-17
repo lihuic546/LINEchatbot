@@ -69,8 +69,9 @@ def handle_text(event):
                 max_tokens=500
             )
             gpt_reply = response.choices[0].message.content
-            user_history[user_id].append({"type": "gpt_text", "text": gpt_reply})
+            user_history[user_id].append({"type": "text", "text": gpt_reply})
 
+            print(gpt_reply)
 
             # 数式判定（\[ \] or \( \) があれば画像化）
             if ("\\[" in gpt_reply or "\\(" in gpt_reply):

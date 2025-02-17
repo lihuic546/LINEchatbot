@@ -7,6 +7,7 @@ def latex_to_image(gpt_reply, image_path="tmp/answer_image.png"):
     img_path = pdf_to_png(pdf_path, image_path)
     return img_path
 
+
 def generate_latex_tex(content, tex_path="tmp/answer.tex"):
     tex_template = f"""
     \\documentclass[12pt]{{ltjsarticle}}
@@ -15,13 +16,7 @@ def generate_latex_tex(content, tex_path="tmp/answer.tex"):
     \\usepackage{{bm}}
     \\usepackage{{mathtools}}
     \\usepackage{{fontspec}}
-    \\setmainfont{{Noto Sans CJK JP}}
-    \\setmainfont{NotoSansJP}[
-        Path=/Users/rhino88/MYProject/Noto_Sans_JP/,
-        Extension=.ttf
-        UprightFont=*Regular,
-        BoldFont=*Bold
-    ]
+    \\setmainfont{{Noto Sans JP}}
     \\begin{{document}}
     {content}
     \\end{{document}}
@@ -29,6 +24,7 @@ def generate_latex_tex(content, tex_path="tmp/answer.tex"):
     with open(tex_path, 'w', encoding='utf-8') as f:
         f.write(tex_template)
     return tex_path
+
 
 
 def compile_latex_to_pdf(tex_path):
