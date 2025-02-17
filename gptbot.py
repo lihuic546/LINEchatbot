@@ -11,6 +11,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 import re
+import subprocess
+from pdf2image import convert_from_path
 
 load_dotenv()
 
@@ -169,65 +171,112 @@ def handle_image(event):
     img_url = response.json()['data']['url']
     user_history[user_id].append({"type": "image_url", "image_url": {"url": img_url}})
 
+def generate_latex_tex(content, tex_path="tmp/answer.tex"):
+    tex_template = f"""
+    \\documentclass{{standalone}}
+    \\usepackage{{amsmath}}
+    \\usepackage{{amssymb}}
+    \\usepackage{{bm}}
+    \\usepackage{{mathtools}}
+    \\usepackage[utf8]{{inputenc}}
+    \\usepackage{{newtxtext,newtxmath}}  % Times系フォント
+    \\begin{{document}}
+    {content}
+    \\end{{document}}
+    """
+    with open(tex_path, 'w', encoding='utf-8') as f:
+        f.write(tex_template)
+    return tex_path
+
+def compile_latex_to_pdf(tex_path):
+    output_dir = "tmp"
+    subprocess.run(
+        ["pdflatex", "-output-directory", output_dir, tex_path],
+        check=True
+    )
+    return tex_path.replace(".tex", ".pdf")
+
+
+def pdf_to_png(pdf_path, image_path="tmp/answer_image.png"):
+    images = convert_from_path(pdf_path)
+    images[0].save(image_path, 'PNG')
+    return image_path
+
+
 def split_latex_blocks(gpt_reply):
     """
-    文章を
-    - 通常テキストブロック
-    - 数式ブロック（\[ ... \]）
-    に分ける
+    - \[...\] → ブロック数式
+    - \(...\) → インライン数式
+    - それ以外 → 通常テキスト
+
+    に分割して保持する
     """
-    # 正規表現で、\[…\]に囲まれた数式部分を分割
-    parts = re.split(r'(\\\[.*?\\\])', gpt_reply, flags=re.DOTALL)
+    import re
+
+    # インライン数式とブロック数式を両方考慮して分割
+    parts = re.split(r'(\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\))', gpt_reply, flags=re.DOTALL)
 
     blocks = []
     for part in parts:
-        if part.startswith(r'\[') and part.endswith(r'\]'):
-            blocks.append({"type": "math", "content": part[2:-2].strip()})
-        elif part.startswith(r'\(') and part.endswith(r'\)'):
-            blocks.append({"type": "math", "content": part[2:-2].strip()})
+        if re.match(r'\$\$.*\$\$', part) or re.match(r'\\\[.*\\\]', part):
+            blocks.append({"type": "block_math", "content": part.strip('$[]\\')})
+        elif re.match(r'\$.*\$', part) or re.match(r'\\\(.*\\\)', part):
+            blocks.append({"type": "inline_math", "content": part.strip('$()\\')})
         elif part.strip():
-            blocks.append({"type": "text", "content": part.strip()})
+            blocks.append({"type": "text", "content": part})
 
     return blocks
 
 
+
 def text_to_image_latex(gpt_reply, image_path="tmp/answer_image.png"):
+
     try:
         os.makedirs("tmp", exist_ok=True)
 
-        # フォント設定
         font_path = "/Users/rhino88/MYProject/Noto_Sans_JP/NotoSansJP-VariableFont_wght.ttf"
         font_prop = FontProperties(fname=font_path)
         plt.rcParams['mathtext.default'] = 'regular'
-
 
         plt.figure(figsize=(10, 10))
 
         blocks = split_latex_blocks(gpt_reply)
 
         y = 0.95
+        line_buffer = ""
 
         for block in blocks:
-            if block["type"] == "math":
+            if block["type"] == "block_math":
+                # 先にバッファ出す（改行）
+                if line_buffer:
+                    plt.text(0, y, line_buffer, fontsize=12, ha='left', va='top', fontproperties=font_prop)
+                    line_buffer = ""
+                    y -= 0.05
                 # 数式ブロック
                 plt.text(
                     0.5, y, f"${block['content']}$",
                     fontsize=14, ha='center', va='top', fontproperties=font_prop
                 )
-            else:
-                # テキストブロック
-                lines = block["content"].split('\n')
-                for line in lines:
-                    plt.text(
-                        0, y, line,
-                        fontsize=12, ha='left', va='top', fontproperties=font_prop
-                    )
-                    y -= 0.05  # テキストは行ごとに
+                y -= 0.1
 
-            y -= 0.05  # 数式ブロックや改行分
+            elif block["type"] == "inline_math":
+                line_buffer += f"${block['content']}$"
+
+            elif block["type"] == "text":
+                line_buffer += block["content"]
+
+            # 区切りが入ったら一旦出す
+            if block["type"] != "inline_math":
+                if line_buffer:
+                    plt.text(0, y, line_buffer, fontsize=12, ha='left', va='top', fontproperties=font_prop)
+                    line_buffer = ""
+                    y -= 0.05
+
+        # 最後に残ってたら出す
+        if line_buffer:
+            plt.text(0, y, line_buffer, fontsize=12, ha='left', va='top', fontproperties=font_prop)
 
         plt.axis('off')
-
         plt.savefig(image_path, dpi=300, bbox_inches='tight', pad_inches=0.2)
         plt.close()
 
